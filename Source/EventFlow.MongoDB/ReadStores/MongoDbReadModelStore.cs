@@ -60,7 +60,7 @@ namespace EventFlow.MongoDB.ReadStores
             return ReadModelEnvelope<TReadModel>.With(id, result);
         }
 
-	    public async Task<IAsyncCursor<TReadModel>> FindAsync(Expression<Func<TReadModel, bool>> filter, FindOptions<TReadModel, TReadModel> options = null, CancellationToken cancellationToken = new CancellationToken())
+        public async Task<IAsyncCursor<TReadModel>> FindAsync(Expression<Func<TReadModel, bool>> filter, FindOptions<TReadModel, TReadModel> options = null, CancellationToken cancellationToken = new CancellationToken())
 	    {
 			var readModelDescription = _readModelDescriptionProvider.GetReadModelDescription<TReadModel>();
 		    var collection = _mongoDatabase.GetCollection<TReadModel>(readModelDescription.RootCollectionName.Value);
@@ -70,7 +70,8 @@ namespace EventFlow.MongoDB.ReadStores
 			return await collection.FindAsync(filter, options, cancellationToken);
 		}
 
-		public async Task UpdateAsync(IReadOnlyCollection<ReadModelUpdate> readModelUpdates, IReadModelContext readModelContext, Func<IReadModelContext, IReadOnlyCollection<IDomainEvent>, ReadModelEnvelope<TReadModel>, CancellationToken, Task<ReadModelEnvelope<TReadModel>>> updateReadModel, CancellationToken cancellationToken)
+        public async Task UpdateAsync(IReadOnlyCollection<ReadModelUpdate> readModelUpdates, IReadModelContextFactory readModelContextFactory,
+            Func<IReadModelContext, IReadOnlyCollection<IDomainEvent>, ReadModelEnvelope<TReadModel>, CancellationToken, Task<ReadModelUpdateResult<TReadModel>>> updateReadModel, CancellationToken cancellationToken)
         {
             var readModelDescription = _readModelDescriptionProvider.GetReadModelDescription<TReadModel>();
 
@@ -94,8 +95,12 @@ namespace EventFlow.MongoDB.ReadStores
                     ? ReadModelEnvelope<TReadModel>.With(readModelUpdate.ReadModelId, result)
                     : ReadModelEnvelope<TReadModel>.Empty(readModelUpdate.ReadModelId);
 
-                readModelEnvelope = await updateReadModel(readModelContext, readModelUpdate.DomainEvents, readModelEnvelope, cancellationToken).ConfigureAwait(false);
+                var readModelContext = readModelContextFactory.Create(readModelUpdate.ReadModelId, false);
 
+                var res = await updateReadModel(readModelContext, readModelUpdate.DomainEvents, readModelEnvelope, cancellationToken).ConfigureAwait(false);
+
+                readModelEnvelope = res.Envelope;
+                
                 readModelEnvelope.ReadModel._version = readModelEnvelope.Version;
 
                 await collection.ReplaceOneAsync<TReadModel>(

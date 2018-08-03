@@ -53,7 +53,8 @@ namespace EventFlow.MongoDB.ReadStores
             return Task.FromResult(ReadModelEnvelope<TReadModel>.Empty(id));
         }
 
-        public async Task UpdateAsync(IReadOnlyCollection<ReadModelUpdate> readModelUpdates, IReadModelContext readModelContext, Func<IReadModelContext, IReadOnlyCollection<IDomainEvent>, ReadModelEnvelope<TReadModel>, CancellationToken, Task<ReadModelEnvelope<TReadModel>>> updateReadModel, CancellationToken cancellationToken)
+        public async Task UpdateAsync(IReadOnlyCollection<ReadModelUpdate> readModelUpdates, IReadModelContextFactory readModelContextFactory,
+            Func<IReadModelContext, IReadOnlyCollection<IDomainEvent>, ReadModelEnvelope<TReadModel>, CancellationToken, Task<ReadModelUpdateResult<TReadModel>>> updateReadModel, CancellationToken cancellationToken)
         {
             var readModelDescription = _readModelDescriptionProvider.GetReadModelDescription<TReadModel>();
 
@@ -72,7 +73,11 @@ namespace EventFlow.MongoDB.ReadStores
                 var collection = _mongoDatabase.GetCollection<TReadModel>(readModelDescription.RootCollectionName.Value);
                 var readModelEnvelope = ReadModelEnvelope<TReadModel>.Empty(readModelUpdate.ReadModelId);
 
-                readModelEnvelope = await updateReadModel(readModelContext, readModelUpdate.DomainEvents, readModelEnvelope, cancellationToken).ConfigureAwait(false);
+                var readModelContext = readModelContextFactory.Create(readModelUpdate.ReadModelId, false);
+
+                var res = await updateReadModel(readModelContext, readModelUpdate.DomainEvents, readModelEnvelope, cancellationToken).ConfigureAwait(false);
+
+                readModelEnvelope = res.Envelope;
                 readModelEnvelope.ReadModel._id = ObjectIdGenerator.Instance.GenerateId(collection, readModelEnvelope.ReadModel);
                 await collection.InsertOneAsync(
                     readModelEnvelope.ReadModel,
